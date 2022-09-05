@@ -22,7 +22,7 @@ if __name__ == "__main__":
     
     # ligar no momento certo
     saida = pk.tenta_uma_compra(contrato, carteira, _pk, qnt_bnb_compra, True)
-    print(saida)
+    print(saida, sys.argv[1])
 
     print("---------"*4)
     # sys.argv

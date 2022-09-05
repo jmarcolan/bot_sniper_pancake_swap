@@ -15,7 +15,7 @@ if __name__ == "__main__":
     
     carteira = os.getenv('CARTEIRA') 
     _pk = os.getenv('_PK')
-    contrato = "0x50332bdca94673f33401776365b66cc4e81ac81d"
+    contrato = "0xf94819686F7f71e1EB69e373D3C442AAe9783883"
     qnt_bnb_compra = 0.01
 
     # valor_moeda = pk.tenta_info(contrato, carteira, _pk, 0.1)

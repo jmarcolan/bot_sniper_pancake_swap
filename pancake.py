@@ -34,6 +34,7 @@ import time
 
 from pathlib import Path
 from decimal import Decimal
+from toolz.functoolz import return_none
 import web3
 
 
@@ -231,51 +232,62 @@ class Robo:
         if amount_bnb > balance_bnb - Wei(2000000000000000):  # leave 0.002 BNB for future gas fees
             print('Not enough BNB balance')
             return False, Decimal(0), 'Not enough BNB balance'
-        slippage_ratio = (Decimal(100) - slippage_percent) / Decimal(100)
-        final_gas_price = self.w3.eth.gas_price
-        if gas_price is not None and gas_price.startswith('+'):
-            offset = Web3.toWei(Decimal(gas_price) * Decimal(10 ** 9), unit='wei')
-            final_gas_price = Wei(final_gas_price + offset)
-        elif gas_price is not None:
-            final_gas_price = Web3.toWei(gas_price, unit='wei')
-        print(f'o gaz ficou de {final_gas_price}')
 
+                
+        def calcula_gaz():
+            final_gas_price = self.w3.eth.gas_price
+            if gas_price is not None and gas_price.startswith('+'):
+                offset = Web3.toWei(Decimal(gas_price) * Decimal(10 ** 9), unit='wei')
+                final_gas_price = Wei(final_gas_price + offset)
+            elif gas_price is not None:
+                final_gas_price = Web3.toWei(gas_price, unit='wei')
+            print(f'o gaz ficou de {final_gas_price}')
+            return final_gas_price
 
-        try:
-            best_path, predicted_out = self.get_best_swap_path(
-                token_address=token_address, amount_in=amount_bnb, sell=False
-            )
-        except ValueError as e:
-            print(e)
-            return (
-                False,
-                Decimal(0),
-                'No compatible LP was found',
-            )
+        final_gas_price = calcula_gaz()
 
-        print(f'a quantidade preditiva {predicted_out}')
-        def det_predicted(pre):
-            r_pre_0 = pre == 0
-            if r_pre_0:
-                v_token = self.get_base_token_price_adrees(token_address)
-                r_ve_token_0 = v_token == 0
-                if not r_ve_token_0:
-                    a= amount_bnb/v_token
-                    saida = Web3.toWei(int(a), unit='wei')
-                    return saida
+        receipt = None
+        for soma_slip in range(0,8,2):
+            try:
+                best_path, predicted_out = self.get_best_swap_path(
+                    token_address=token_address, amount_in=amount_bnb, sell=False)
+            except ValueError as e:
+                print(e)
+                return (False, Decimal(0),'No compatible LP was found',)
+
+            print(f'a quantidade preditiva {predicted_out}')
+            
+            slip_inicial = slippage_percent
+            def det_predicted(pre):
+                r_pre_0 = pre == 0
+                if r_pre_0:
+                    v_token = self.get_base_token_price_adrees(token_address)
+                    r_ve_token_0 = v_token == 0
+                    if not r_ve_token_0:
+                        a= amount_bnb/v_token
+                        saida = Web3.toWei(int(a), unit='wei')
+                        return saida
+                    else:
+                        return pre
                 else:
                     return pre
-            else:
-                return pre
             
+            slip_inicial += soma_slip
 
+            predicted_out = det_predicted(predicted_out)
+            slippage_ratio = (Decimal(100) - slip_inicial) / Decimal(100)
+            min_output_tokens = Web3.toWei(slippage_ratio * predicted_out, unit='wei')
+            print(f'A menor quantidade {min_output_tokens}')
+            receipt = self.buy_tokens_with_params(
+                path=best_path, amount_bnb=amount_bnb, min_output_tokens=min_output_tokens, gas_price=final_gas_price
+            )
+            if receipt is None:
+                print(f'Can\'t get gas estimate, check if slippage is set correctly (currently {slip_inicial}%)')
+            else:
+                break # termina o looping 
 
-        predicted_out = det_predicted(predicted_out)
-        min_output_tokens = Web3.toWei(slippage_ratio * predicted_out, unit='wei')
-       
-        receipt = self.buy_tokens_with_params(
-            path=best_path, amount_bnb=amount_bnb, min_output_tokens=min_output_tokens, gas_price=final_gas_price
-        )
+        
+        # se mesmo tentando um monte nao tem uma recipt
         if receipt is None:
             print('Can\'t get gas estimate')
             return (
@@ -420,6 +432,7 @@ class Robo:
                 continue
             amounts_out.append(amount_out)
             valid_paths.append(path)
+
         if not valid_paths:
             raise ValueError('No valid pair was found')
         argmax = max(range(len(amounts_out)), key=lambda i: amounts_out[i])
@@ -617,7 +630,7 @@ def compra(CONTRATO, carteira, _pk, qnt_bnb_da_compra, fast=False):
     print("Quanto é o bnb to wei: ",   valor_compra_wei )
     
     if fast:
-        saida = r.buy_tokens( token_str , Wei(valor_compra_wei), Decimal(10), "+3") #FAST
+        saida = r.buy_tokens( token_str , Wei(valor_compra_wei), Decimal(10), "+25") #FAST
     else:
         saida = r.buy_tokens( token_str , Wei(valor_compra_wei), Decimal(1), None) #FAST
     print(saida)
@@ -672,13 +685,13 @@ def venda(CONTRATO, carteira, _pk, valor_venda_token, fast= False):
         r_aprovado_novo = r.is_approved(token_str)
         if r_aprovado_novo:
             if fast:
-                saida = r.sell_tokens( token_str , Wei(valor_venda), Decimal(10), "+4") #FAST
+                saida = r.sell_tokens( token_str , Wei(valor_venda), Decimal(18), "+12") #FAST
             else:
                 saida = r.sell_tokens( token_str , Wei(valor_venda), Decimal(1), None) #FAST
 
     else:
         if fast:
-            saida = r.sell_tokens( token_str , Wei(valor_venda), Decimal(10), "+4") #FAST
+            saida = r.sell_tokens( token_str , Wei(valor_venda), Decimal(18), "+12") #FAST
         else:
             saida = r.sell_tokens( token_str , Wei(valor_venda), Decimal(1), None) #FAST
 
